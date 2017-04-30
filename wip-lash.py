@@ -2,6 +2,7 @@
 
 import threading
 import re
+import sched, time
 import argparse
 import curses
 from scapy.all import *
@@ -15,8 +16,11 @@ from scapy.all import *
 
 # Global defaults
 verbose=False
+quit=False
 counter=0
 nicelist=[]
+sch=sched.scheduler(timefunc=time.time)
+threshold=60
 
 # This function does all the setup and contains the main loop at the moment
 def main():
@@ -39,19 +43,20 @@ def main():
 
     print("Starting packet capture on interface {}".format(arguments.interface))
     sniffer_args = {
-            'interface' : arguments.interface
+            'interface' : arguments.interface,
             'mode' : arguments.mode.lower()
             }
     sniffer = SnifferThread(1,"sniffer1",sniffer_args)
+    sch.enter(1,1,ThresholdChecker)
     sniffer.start()
-    quit=False
+    sch.run()
     while not quit:
         # This seems like a really stupid way to do this
         # We're missing some serious input sanitation. Gross...
         cmd = input("Enter a command or 'help' for a list of commands: \n")
         if cmd.lower()=="quit":
             print("Exiting normally")
-            sys.exit(0)
+            quit=True
         elif cmd.lower()=="help":
             print("Command - Description")
             print("quit .......... Terminates the program")
@@ -59,7 +64,6 @@ def main():
             #print("add [MAC] ..... Adds the MAC to the list of protected networks")
             #print("rm [MAC] ...... Removes the MAC from the list of protected networks")
             #print("list nice ..... Lists the networks being protected")
-            #print("list naughty .. Lists MACs that have sent 'bad' deauth packets")
 
         #elif cmd.lower()==re.match('add \d\d:\d\d:\d\d:\d\d:\d\d:\d\d',cmd.lower()):
             #TODO
@@ -96,10 +100,10 @@ class SnifferThread(threading.Thread):
 # Yeah, Steff. That'll happen
 # Watches networks on the nice list for deauth packets
 def DeauthHandler(pkt):
-    global counter
-    counter+=1
     if pkt.haslayer(Dot11):
         if pkt.type==0 and pkt.subtype==12:
+            global counter
+            counter+=1
             global nicelist
             if (pkt.addr1 in nicelist) or (pkt.addr2 in nicelist) or verbose:
                 print("Deauth: {} -> {} Flags: {} Reason: {}".format(pkt.addr1,pkt.addr2,pkt.flags,pkt[Dot11Deauth].reason))
@@ -109,13 +113,23 @@ def DeauthHandler(pkt):
 # Assumes that neither the AP nor the device running this code is moving
 # Future applications: 
 def TrackerHandler(pkt):
-    global counter
-    counter+=1
+    if quit:
+        sys.exit(0)
     if pkt.haslayer(Dot11):
         if pkt.addr1 in nicelist:
             print("{}'s signal strength is {}".format(pkt.addr1,pkt[RadioTap].dBm_TX_Power))
         if pkt.addr2 in nicelist:
             print("{}'s signal strength is {}".format(pkt.addr2,pkt[RadioTap].dBm_TX_Power))
+
+def ThresholdChecker():
+    if quit:
+        sys.exit(0)
+    if counter>=threshold:
+        print("Threshold exceeded! Probable deauth attack!")
+    global counter
+    counter=0
+    sch.enter(1,1,ThresholdChecker)
+    sch.run()
 
 if __name__ == '__main__':
     main()
