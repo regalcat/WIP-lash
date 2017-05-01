@@ -4,7 +4,7 @@ import threading
 import re
 import sched, time
 import argparse
-import curses
+#import curses
 from scapy.all import *
 
 #-----------------
