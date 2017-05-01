@@ -118,8 +118,6 @@ def TrackerHandler(pkt):
     if pkt.haslayer(Dot11):
         if pkt.addr1 in nicelist:
             print("{}'s signal strength is {}".format(pkt.addr1,pkt[RadioTap].dBm_TX_Power))
-        if pkt.addr2 in nicelist:
-            print("{}'s signal strength is {}".format(pkt.addr2,pkt[RadioTap].dBm_TX_Power))
 
 def ThresholdChecker():
     if quit:
